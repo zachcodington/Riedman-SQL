@@ -1,0 +1,252 @@
+USE [TutorialDB];
+
+-- Drop table if it exists
+IF OBJECT_ID('dbo.PropertyInfo', 'U') IS NOT NULL
+    DROP TABLE dbo.PropertyInfo;
+GO
+
+-- Create PropertyInfo table
+CREATE TABLE dbo.PropertyInfo (
+    PropertyName NVARCHAR(50) NOT NULL,
+    Unit NVARCHAR(50) NULL,
+    StreetAddress NVARCHAR(50) NULL,
+    City NVARCHAR(50) NULL,
+    State_ NVARCHAR(50) NULL,
+	ZipCode INT NULL,
+	Management NVARCHAR(50) NULL,
+	TenantName NVARCHAR(50) NULL,
+	LeaseStart DATE NOT NULL,
+	LeaseEnd DATE NOT NULL,
+	MoveInDate DATE NOT NULL,
+	MoveOutDate DATE NOT NULL,
+	SetMonthlyRent INT NULL,
+	SecurityDeposit INT NULL,
+	PaymentStatus NVARCHAR(50) NULL,
+	RentHistory NVARCHAR(MAX) NULL, -- JSON ARRAY TO HOLD MULTIPLE INTs,
+	CollegeDistance DECIMAL(10,1) NULL,
+	VacancyRates DECIMAL(10,1) NULL
+
+);
+GO
+
+-- Insert data into PropertyInfo Table
+INSERT INTO dbo.PropertyInfo 
+    ([PropertyName], [Unit], [StreetAddress], [City], [State_], [ZipCode], [Management], [TenantName], 
+    [LeaseStart], [LeaseEnd], [MoveInDate], [MoveOutDate], [SetMonthlyRent], [SecurityDeposit], [PaymentStatus], [RentHistory], [CollegeDistance], [VacancyRates])
+VALUES
+    ('Lakeview Apartments', '101', '123 Lake St', 'Erie', 'PA', 16501, 'Riedman Management', 'Emily Johnson', 
+    '2026-04-01', '2026-06-30', '2025-06-02', '2026-06-15', 820, 820, 'Paid', '[800, 805, 820, 810]',10,2.4),
+
+    ('Lakeview Apartments', '202', '123 Lake St', 'Erie', 'PA', 16501, 'Riedman Management', 'Michael Brown', 
+    '2026-03-01', '2026-06-30', '2025-06-02', '2026-06-15', 850, 850, 'Late','[800, 805, 820, 810]',10,2.3),
+
+    ('Summit Ridge Townhomes', 'A', '200 Summit Dr', 'Erie', 'PA', 16509, 'Riedman Management', 'Sarah Davis', 
+    '2026-04-01', '2026-06-30', '2025-06-02', '2026-06-15', 900, 900, 'Paid','[800, 805, 820, 810]',15,6.6),
+
+    ('Summit Ridge Townhomes', 'B', '200 Summit Dr', 'Erie', 'PA', 16509, 'Riedman Management', 'Daniel Reed', 
+    '2026-06-01', '2026-06-30', '2025-06-02', '2026-06-15', 930, 930, 'Paid','[800, 805, 820, 810]',15,6.3),
+
+    ('Summit Ridge Townhomes', 'B', '200 Summit Dr', 'Erie', 'PA', 16509, 'Riedman Management', 'Lisa Stewart', 
+    '2026-08-01', '2026-06-30', '2025-06-02', '2026-06-15', 950, 950, 'Late','[800, 805, 820, 810]',15,6.3),
+
+    ('Pinecrest Village', '101', '55 Pinecrest Ln', 'Erie', 'PA', 16505, 'Riedman Management', 'Jason Miller', 
+    '2026-05-01', '2026-06-30', '2025-06-02', '2026-06-15', 780, 780, 'Paid','[800, 805, 820, 810]',20,3.3),
+
+    ('Pinecrest Village', '102', '55 Pinecrest Ln', 'Erie', 'PA', 16505, 'Riedman Management', 'Samantha Lee', 
+    '2026-06-01', '2026-06-30', '2025-06-02', '2026-06-15', 795, 795, 'Paid','[800, 805, 820, 810]',20,6.6),
+
+    ('Pinecrest Village', '103', '55 Pinecrest Ln', 'Erie', 'PA', 16505, 'Riedman Management', 'Anthony Green', 
+    '2026-04-01', '2026-06-30', '2025-06-02', '2026-06-15', 810, 810, 'Pending','[800, 805, 820, 810]',20,5.6),
+
+    ('Bayfront Commons', 'A1', '300 West Bay Dr', 'Erie', 'PA', 16507, 'Riedman Management', 'Patricia Baker', 
+    '2025-04-01', '2026-06-30', '2025-06-02', '2026-06-15', 850, 850, 'Paid','[800, 805, 820, 810]',11,3.5),
+
+    ('Bayfront Commons', 'B2', '300 West Bay Dr', 'Erie', 'PA', 16507, 'Riedman Management', 'Robert Wilson', 
+    '2026-12-01', '2026-06-30', '2025-06-02', '2026-06-15', 860, 860, 'Paid','[800, 805, 820, 810]',11,3.4),
+
+    ('Bayfront Commons', 'C3', '300 West Bay Dr', 'Erie', 'PA', 16507, 'Riedman Management', 'Andrew Rogers', 
+    '2026-12-01', '2026-06-30', '2025-06-02', '2026-06-15', 890, 890, 'Late','[800, 805, 820, 810]',11,4.4);
+
+GO
+
+IF OBJECT_ID('dbo.RentIncrease', 'FN') IS NOT NULL
+    DROP FUNCTION dbo.RentIncrease;
+GO
+
+
+ -- RENT INCREASE FORMULA
+ CREATE FUNCTION RentIncrease( 
+    @setRent DECIMAL(10,2), 
+    @monthsOut INT, 
+    @collegeDistance INT, 
+    @vacancyRates DECIMAL(10,2), 
+    @avgSimilarRents DECIMAL(10,2)
+	
+)
+RETURNS DECIMAL(10,2)
+AS 
+BEGIN
+    DECLARE @locationScore DECIMAL(10,2);
+    DECLARE @vacancyScore DECIMAL(10,2);
+    DECLARE @marketRent DECIMAL(10,2);
+	DECLARE @peakMovingSeason DECIMAL(10,2);
+
+    -- Calculate locationScore
+    IF @collegeDistance BETWEEN 0 AND 30 
+        SET @locationScore = 1 + ((ABS(@collegeDistance - 30))/100);
+    ELSE IF @collegeDistance > 31 
+        SET @locationScore = 1 - ((ABS(@collegeDistance - 30))/100);;
+    ELSE 
+        SET @locationScore = 0;  -- Default value for other cases
+
+    -- Calculate vacancyScore
+    IF @vacancyRates BETWEEN 0 AND 3 
+        SET @vacancyScore = 1.08;
+    ELSE IF @vacancyRates BETWEEN 3 AND 6 
+        SET @vacancyScore = 1;
+    ELSE 
+        SET @vacancyScore = .92;
+
+	-- Peak Moving Season
+	IF @monthsOut + MONTH(DATEADD(MONTH, @monthsOut, SYSDATETIME())) BETWEEN 4 AND 9
+		SET @peakMovingSeason = 1.1;
+	ELSE
+		SET @peakMovingSeason = 0;
+		
+
+    -- Calculate market rent
+    SET @marketRent = .35 * (@setRent * @vacancyScore) + .20 * (@setRent * @locationScore) + .45 * (@setRent + (@setRent * .1 * (18 - @monthsOut))) --+ .05 * (@setRent * @peakMovingSeason)
+
+    RETURN @marketRent;
+END;
+GO
+
+IF OBJECT_ID('dbo.RentDecrease', 'FN') IS NOT NULL
+    DROP FUNCTION dbo.RentDecrease;
+GO
+
+-- RENT DECREASE FORMULA
+CREATE FUNCTION RentDecrease( 
+    @setRent DECIMAL(10,2), 
+    @monthsOut INT, 
+    @collegeDistance INT, 
+    @vacancyRates DECIMAL(10,2), 
+    @avgSimilarRents DECIMAL(10,2)
+
+	
+)
+RETURNS DECIMAL(10,2)
+AS 
+BEGIN
+    DECLARE @locationScore DECIMAL(10,2);
+    DECLARE @vacancyScore DECIMAL(10,2);
+    DECLARE @marketRent DECIMAL(10,2);
+	DECLARE @12MonthsOutRent DECIMAL(10,2);
+
+    -- Calculate locationScore
+	--SET @setRent = .35 * (@setRent * @vacancyScore) + .20 * (@setRent * @locationScore) + .45 * (@setRent + (@setRent * .01 * (6)));
+    IF @collegeDistance BETWEEN 0 AND 30 
+        SET @locationScore = 1 + ((ABS(@collegeDistance - 30))/100);
+    ELSE IF @collegeDistance > 31 
+        SET @locationScore = 1 - ((ABS(@collegeDistance - 30))/100);;
+    ELSE 
+        SET @locationScore = 0;  -- Default value for other cases
+
+    -- Calculate vacancyScore
+    IF @vacancyRates BETWEEN 0 AND 3 
+        SET @vacancyScore = 1.03;
+    ELSE IF @vacancyRates BETWEEN 3 AND 6 
+        SET @vacancyScore = 1;
+    ELSE 
+        SET @vacancyScore = .97;
+
+    -- Calculate market rent
+	SET @12MonthsOutRent = dbo.RentIncrease(@setRent, 12, @collegeDistance, @vacancyRates, @avgSimilarRents);
+ -- IF @monthsOut = 11
+		SET @marketRent = .35 * (@12MonthsOutRent * @vacancyScore) + .20 * (@12MonthsOutRent * @locationScore) + .45 * (@12MonthsOutRent - (@12MonthsOutRent * .01 * (18 - @monthsOut)))
+	--ELSE
+	--	SET @marketRent = .35 * (@setRent * @vacancyScore) + .20 * (@setRent * @locationScore) + .45 * (@setRent - (@setRent * .01 * (18 - @monthsOut)))
+
+    RETURN @marketRent;
+END;
+GO
+
+
+-- Hardcoded table of months out from 18 to 12
+WITH CustomDecreasingValue AS (
+    SELECT 18 AS MonthsOut UNION ALL
+    SELECT 17 UNION ALL
+    SELECT 16 UNION ALL
+    SELECT 15 UNION ALL
+    SELECT 14 UNION ALL
+    SELECT 13 UNION ALL
+    SELECT 12
+),
+SelectedUnit AS (
+    SELECT TOP 1 *
+    FROM dbo.PropertyInfo
+    WHERE PropertyName = 'Pinecrest Village' --SPECIFIC APARTMENT
+      AND Unit = '102' -- SPECIFIC UNIT
+     --
+)
+SELECT 
+    su.PropertyName,
+    su.Unit,
+    su.LeaseStart,
+    su.SetMonthlyRent AS CurrentRent,
+    su.CollegeDistance,
+    su.VacancyRates,
+    cdv.MonthsOut,
+    dbo.RentIncrease(
+        su.SetMonthlyRent,     -- @setRent
+        cdv.MonthsOut,         -- @monthsOut from simulated time
+        su.CollegeDistance,    -- from table
+        su.VacancyRates,       -- from table
+        850                    -- still hardcoded avgSimilarRents (you could make this dynamic too)
+    ) AS ProjectedRentAtMonthOut
+FROM CustomDecreasingValue cdv
+CROSS JOIN SelectedUnit su
+ORDER BY cdv.MonthsOut DESC;
+
+
+
+WITH CustomDecreasingValue AS (
+    SELECT 11 AS MonthsOut UNION ALL
+    SELECT 10 UNION ALL
+    SELECT 9 UNION ALL
+    SELECT 8 UNION ALL
+    SELECT 7 UNION ALL
+    SELECT 6 UNION ALL
+    SELECT 5 UNION ALL
+    SELECT 4 UNION ALL
+    SELECT 3 UNION ALL
+    SELECT 2 UNION ALL
+    SELECT 1 UNION ALL
+    SELECT 0
+),
+SelectedUnit AS (
+    SELECT TOP 1 *
+    FROM dbo.PropertyInfo
+    WHERE PropertyName = 'Pinecrest Village' -- Specific Apartment
+      AND Unit = '102'                        -- Specific Unit
+)
+SELECT 
+    su.PropertyName,
+    su.Unit,
+    su.LeaseStart,
+    su.SetMonthlyRent AS CurrentRent,
+    su.CollegeDistance,
+    su.VacancyRates,
+    cdv.MonthsOut,
+    dbo.RentDecrease(                         -- Use the correct function here
+        su.SetMonthlyRent,                    -- @setRent
+        cdv.MonthsOut,                        -- @monthsOut
+        su.CollegeDistance,                   -- @collegeDistance
+        su.VacancyRates,                      -- @vacancyRates
+        850                                   -- @avgSimilarRents (still hardcoded)
+    ) AS ProjectedRentAtMonthOut
+FROM CustomDecreasingValue cdv
+CROSS JOIN SelectedUnit su
+ORDER BY cdv.MonthsOut DESC;
+
+	
